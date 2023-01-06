@@ -1,13 +1,45 @@
 import sqlite3
 from flask import Flask, jsonify, request, abort
+import jwt
 from flask_cors import CORS
 import os
 import json
 from operator import itemgetter
+from datetime import datetime , timedelta
+from functools import wraps
 
 currentdirectory = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = '74ebc58d13224d0daa4989a8734133ea'
+
+def token_required(func):
+    @wraps(func)
+    def decorated(*args , **kwargs):
+        token = request.args.get('token')
+        if not token:
+           return jsonify({'Alert!':'Tocken is missing ! '})
+        try:
+            payload = jwt.decode(token,app.config['SECRET_KEY']) 
+        except:
+          return jsonify({'Alert!': 'Invalid Token!'})
+    return decorated
+
+@app.route('/login',methods=['POST'])
+def login():
+  if request.form['username'] and request.form['password'] == '123456':
+      session['logged_in'] = True 
+      token = jwt.encode({
+          'user':request.form['username'],
+          'expiration':str(datetime.utcnow() + timedelta(seconds=120))
+      },
+          app.config['SECRET_KEY'])
+      return jsonify({'token':token.decode('utf-8')})
+  else:
+    return make_response(' Password : Wrong ', 401 , {'WWW-Authenticate': 'Basic realm:"Authentification Failed !'})
+if __name__ == "__main__":
+    app.run(debug=True)
+
 CORS(app)
 
 class Question():
@@ -18,10 +50,7 @@ class Question():
 		self.position = position
 		self.possibleAnswers = possibleAnswers
 
-@app.route('/')
-def hello_world():
-	x = 'world'
-	return f"Hello, {x}"
+
 
 def get_db_connection():
     connection = sqlite3.connect(currentdirectory + "\quiz.db")
@@ -64,21 +93,23 @@ def AddQuestion():
 	conn.close()
 	return {"id" : id}, 200
 
-@app.route('/questions/<questionId>', methods=['GET'])
-def getQuestionId(questionId):
-	conn = get_db_connection()
-	q = conn.execute("SELECT * FROM questions WHERE id = ?",
-                        (questionId,)).fetchone()
-	conn.close()
-	row_dict = dict(q)
-	return row_dict, 200
-
 @app.route('/questions', methods=['GET'])
 def getQuestionPosition():
 	position = request.args.get("position")
 	conn = get_db_connection()
 	row = conn.execute("SELECT * FROM questions WHERE position = ?",
                         (position,)).fetchone()
+	conn.close()
+	data = []
+	data.append({'id': row[0], 'title': row[1], 'text': row[2], 'image': row[3], 'position': row[4], 'possibleAnswers': json.loads(row[5])})
+	return jsonify(data)
+
+@app.route('/questions/<id>', methods=['GET'])
+def show_question(id):
+	# retrieve the question with the specified ID from the database
+	conn = get_db_connection()
+	row = conn.execute("SELECT * FROM questions WHERE id = ?",
+                        (id)).fetchone()
 	conn.close()
 	data = []
 	data.append({'id': row[0], 'title': row[1], 'text': row[2], 'image': row[3], 'position': row[4], 'possibleAnswers': json.loads(row[5])})
